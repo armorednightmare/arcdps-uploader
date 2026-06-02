@@ -258,7 +258,7 @@ void Uploader::imgui_draw_logs() {
         }
 
         ImGui::PushStyleColor(ImGuiCol_Text, col);
-        ImGui::PushID(s.human_time.c_str());
+        ImGui::PushID(s.filename.c_str());
         ImGui::SetNextItemAllowOverlap();
         ImGui::Selectable(display.c_str(), &selected[i],
                           ImGuiSelectableFlags_SpanAllColumns);
