@@ -110,9 +110,24 @@ arcdps_exports* mod_init() {
         fs::create_directory(uploader_data_path);
     }
 
-    // Loguru Log
+    // Loguru Log rotation (up to 10 backup logs)
     fs::path uploader_log_path = uploader_data_path / "uploader.log";
-    loguru::add_file(uploader_log_path.string().c_str(), loguru::Truncate,
+    try {
+        for (int i = 9; i >= 1; --i) {
+            fs::path src = uploader_data_path / ("uploader.log." + std::to_string(i));
+            fs::path dst = uploader_data_path / ("uploader.log." + std::to_string(i + 1));
+            if (fs::exists(src)) {
+                fs::rename(src, dst);
+            }
+        }
+        if (fs::exists(uploader_log_path)) {
+            fs::rename(uploader_log_path, uploader_data_path / "uploader.log.1");
+        }
+    } catch (const std::exception& e) {
+        // Ignore rotation errors (e.g. file lock)
+    }
+
+    loguru::add_file(uploader_log_path.string().c_str(), loguru::Append,
                      loguru::Verbosity_MAX);
 
     // Uploader

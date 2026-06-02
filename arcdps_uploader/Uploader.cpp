@@ -31,7 +31,8 @@ inline auto initStorage(const std::string& path) {
                    make_column("boss_name", &Log::boss_name),
                    make_column("players_json", &Log::players_json),
                    make_column("json_available", &Log::json_available),
-                   make_column("success", &Log::success)),
+                   make_column("success", &Log::success),
+                   make_column("upload_attempts", &Log::upload_attempts)),
         make_table(
             "webhooks",
             make_column("id", &Webhook::id, autoincrement(), primary_key()),
@@ -272,15 +273,44 @@ void Uploader::imgui_draw_logs() {
         ImGui::NextColumn();
         if (s.uploaded) {
             ImGui::PushID(s.filename.c_str());
-            if (ImGui::SmallButton("View")) {
-                if (!s.permalink.empty()) {
-                    int sz =
+            if (s.error) {
+                if (ImGui::SmallButton("Retry")) {
+                    s.uploaded = false;
+                    s.error = false;
+                    s.upload_attempts = 0;
+                    try {
+                        storage->update(s);
+                        std::vector<int> q = { s.id };
+                        add_pending_upload_logs(q);
+                    } catch (std::system_error& e) {
+                        LOG_F(ERROR, "Failed to reset log for retry: %s", e.what());
+                    }
+                }
+            } else {
+                if (ImGui::SmallButton("View")) {
+                    if (!s.permalink.empty()) {
+                        int sz =
+                            MultiByteToWideChar(CP_UTF8, 0, s.permalink.c_str(),
+                                                (int)s.permalink.size(), 0, 0);
+                        std::wstring wstr(sz, 0);
                         MultiByteToWideChar(CP_UTF8, 0, s.permalink.c_str(),
-                                            (int)s.permalink.size(), 0, 0);
-                    std::wstring wstr(sz, 0);
-                    MultiByteToWideChar(CP_UTF8, 0, s.permalink.c_str(),
-                                        (int)s.permalink.size(), &wstr[0], sz);
-                    ShellExecute(0, 0, wstr.c_str(), 0, 0, SW_SHOW);
+                                            (int)s.permalink.size(), &wstr[0], sz);
+                        ShellExecute(0, 0, wstr.c_str(), 0, 0, SW_SHOW);
+                    }
+                }
+            }
+            ImGui::PopID();
+        } else if (s.upload_attempts >= 3) {
+            // Should not happen, but fallback if not marked uploaded/error
+            ImGui::PushID(s.filename.c_str());
+            if (ImGui::SmallButton("Retry")) {
+                s.upload_attempts = 0;
+                try {
+                    storage->update(s);
+                    std::vector<int> q = { s.id };
+                    add_pending_upload_logs(q);
+                } catch (std::system_error& e) {
+                    LOG_F(ERROR, "Failed to reset log for retry: %s", e.what());
                 }
             }
             ImGui::PopID();
@@ -1029,6 +1059,7 @@ void Uploader::start_async_refresh_log_list() {
                         log.boss_id = 0;
                         log.json_available = false;
                         log.success = false;
+                        log.upload_attempts = 0;
 
                         try {
                             log.id = storage->insert(log);
@@ -1047,7 +1078,7 @@ void Uploader::start_async_refresh_log_list() {
 
             std::vector<int> queue;
             for (auto& log : file_list) {
-                if (!log.uploaded) queue.push_back(log.id);
+                if (!log.uploaded && log.upload_attempts < 3) queue.push_back(log.id);
             }
             add_pending_upload_logs(queue);
 
@@ -1142,6 +1173,8 @@ void Uploader::upload_thread_loop() {
                 params.Add({"detailedwvw", "true"});
             }
 
+            log->upload_attempts++;
+
             response = cpr::Post(url, params, multi);
 
             StatusMessage status;
@@ -1150,6 +1183,7 @@ void Uploader::upload_thread_loop() {
                 json parsed = json::parse(response.text);
 
                 log->uploaded = true;
+                log->error = false;
                 log->report_id = parsed["id"].get<std::string>();
                 log->permalink = parsed["permalink"].get<std::string>();
                 json encounter = parsed["encounter"];
@@ -1192,15 +1226,25 @@ void Uploader::upload_thread_loop() {
                 status.msg =
                     "Upload failed. Invalid Username/Password. Please login "
                     "again.";
+                if (log->upload_attempts >= 3) {
+                    log->uploaded = true;
+                    log->error = true;
+                }
             } else if (response.status_code == 400) {
                 status.msg =
                     "Upload failed. Invalid File/File Error or Connection "
                     "Error.";
+                LOG_F(ERROR, "Upload failed with HTTP 400. File: %s, Response: %s, CPR Error: %s", 
+                      log->filename.c_str(), response.text.c_str(), response.error.message.c_str());
+                if (log->upload_attempts >= 3) {
+                    log->uploaded = true;
+                    log->error = true;
+                }
             } else {
                 status.msg = "Unknown response.\n" + response.text;
-                LOG_F(INFO, "Upload failed: %s - %d, %s, %s", log->filename,
-                      response.status_code, response.error.message,
-                      response.text);
+                LOG_F(INFO, "Upload failed: %s - %d, %s, %s", log->filename.c_str(),
+                      response.status_code, response.error.message.c_str(),
+                      response.text.c_str());
                 log->uploaded = true;
                 log->error = true;
             }

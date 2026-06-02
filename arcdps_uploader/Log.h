@@ -24,6 +24,7 @@ struct Log {
 	std::optional<nlohmann::json> players;
 	bool json_available;
 	bool success;
+	int upload_attempts;
 
 	inline bool operator==(const Log&rhs) {
 		return time == rhs.time && filename == rhs.filename;
