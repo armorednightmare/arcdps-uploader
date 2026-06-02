@@ -2,6 +2,6 @@
     "name": "arcdps-uploader",
     "version": "0.9.6",
     "dependencies": [
-            "name": "cpr"
+        "cpr"
     ]
 }
