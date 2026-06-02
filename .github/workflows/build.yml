@@ -2,7 +2,7 @@ name: Build arcdps-uploader
 
 on:
   push:
-    branches: [ "master", "main" ]
+    # Ohne branches-Filter triggert der Workflow bei jedem Push
   pull_request:
     branches: [ "master", "main" ]
   workflow_dispatch:
