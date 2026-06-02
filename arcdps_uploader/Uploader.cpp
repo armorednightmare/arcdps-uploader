@@ -9,6 +9,7 @@
 #include "imgui/imgui.h"
 #include "imgui/imgui_stdlib.h"
 #include "loguru.hpp"
+#include "IDTableNPC.h"
 
 using json = nlohmann::json;
 
@@ -849,20 +850,19 @@ void Uploader::check_webhooks(int log_id) {
             }
         }
 
-        Revtc::BossCategory category =
-            Revtc::Parser::encounterCategory((Revtc::BossID)log->boss_id);
+        std::string category = IDTableNPC::getCategory(log->boss_id);
         for (const auto& wh : webhooks) {
             bool process = true;
             if (!log->success && wh.success) process = false;
-            if (category == Revtc::BossCategory::RAIDS && !wh.raids)
+            if (category == "RAIDS" && !wh.raids)
                 process = false;
-            if (category == Revtc::BossCategory::FRACTALS && !wh.fractals)
+            if (category == "FRACTALS" && !wh.fractals)
                 process = false;
-            if (category == Revtc::BossCategory::STRIKES && !wh.strikes)
+            if (category == "STRIKES" && !wh.strikes)
                 process = false;
-            if (category == Revtc::BossCategory::GOLEMS && !wh.golems)
+            if (category == "GOLEMS" && !wh.golems)
                 process = false;
-            if (category == Revtc::BossCategory::WVW && !wh.wvw)
+            if (category == "WVW" && !wh.wvw)
                 process = false;
             // if (category == Revtc::BossCategory::UNKNOWN)
             //    process = false;
