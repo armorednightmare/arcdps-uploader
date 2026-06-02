@@ -598,9 +598,13 @@ namespace Revtc {
             case BossID::PROTOTYPE_INDIGO:
             case BossID::PROTOTYPE_ARSENITE:
             case BossID::PROTOTYPE_VERMILION_CM:
-            case BossID::PROTOTYPE_INDIGO_CM:
             case BossID::PROTOTYPE_ARSENITE_CM:
+            case BossID::PROTOTYPE_INDIGO_CM:
                 return "Old Lion's Court";
+            // Janthir Wilds Meta
+            case BossID::GWYLLIAN:
+                return "Gwyllian";
+            //Holiday
             case BossID::FREEZIE:
                 return "Freezie";
             case BossID::DAGDA:
@@ -743,6 +747,8 @@ namespace Revtc {
                 return BossCategory::STRIKES;
             //SotO Open World Meta
             case BossID::EPARCH_META:
+            //Janthir Wilds Meta
+            case BossID::GWYLLIAN:
                 return BossCategory::STRIKES;
             //Janthir Wilds Raids
             case BossID::GREER:

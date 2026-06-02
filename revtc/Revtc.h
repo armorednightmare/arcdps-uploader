@@ -119,6 +119,8 @@ namespace Revtc {
 		URA = 26712,
 		//Visions of Eternity Raids (Guardian's Glade)
 		KELA = 27124,
+		//Janthir Wilds Meta
+		GWYLLIAN = 27369,
 		//Convergences
 		DEMON_KNIGHT = 26142,
 		SORROW = 26126,
