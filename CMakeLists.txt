@@ -27,7 +27,7 @@ set(SOURCE
     arcdps_uploader/imgui/imgui_stdlib.cpp
     arcdps_uploader/loguru.cpp
     arcdps_uploader/sqlite3.c
-    revtc/Revtc.cpp
+    arcdps_uploader/IDTableNPC.cpp
 )
 
 set(HEADERS
@@ -45,6 +45,8 @@ set(HEADERS
     arcdps_uploader/imgui/imstb_textedit.h
     arcdps_uploader/imgui/imstb_truetype.h
     arcdps_uploader/imgui/imgui_stdlib.h
+    arcdps_uploader/IDTableNPC.h
+    arcdps_uploader/DefaultIDTableNPC.h
 )
 
 add_library(d3d9_uploader SHARED

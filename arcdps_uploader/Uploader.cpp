@@ -58,6 +58,8 @@ Uploader::Uploader(fs::path data_path, std::optional<fs::path> custom_log_path)
     // Load settings from INI
     settings.load();
 
+    IDTableNPC::load(data_path / "id_table_npc.json");
+
     // Sqlite Database
     fs::path db_path = data_path / "uploader.db";
     LOG_F(INFO, "DB Path: %s", db_path.string().c_str());
@@ -1153,6 +1155,7 @@ void Uploader::upload_thread_loop() {
                 json encounter = parsed["encounter"];
                 log->boss_id = encounter.value("bossId", 0);
                 log->boss_name = encounter.value("boss", "");
+                IDTableNPC::addOrUpdate(log->boss_id, log->boss_name);
                 if (log->boss_name.empty() || log->boss_name == "Unknown") {
                     if (log->boss_id != 0) {
                         log->boss_name = "Unknown " + std::to_string(log->boss_id);
