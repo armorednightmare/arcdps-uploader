@@ -10,6 +10,8 @@
 #include "imgui/imgui_stdlib.h"
 #include "loguru.hpp"
 #include "IDTableNPC.h"
+#include <fstream>
+#include <sstream>
 
 using json = nlohmann::json;
 
@@ -1162,8 +1164,30 @@ void Uploader::upload_thread_loop() {
             cpr::Response response;
             cpr::Url url = cpr::Url{"https://dps.report/uploadContent"};
             cpr::Parameters params = cpr::Parameters{};
+            
+            // Read file into memory to avoid CPR/Curl path encoding issues on Windows
+            std::ifstream file(log->path, std::ios::binary);
+            if (!file.is_open()) {
+                StatusMessage status;
+                status.log_id = log_id;
+                status.msg = "Upload failed. Could not open file locally.";
+                LOG_F(ERROR, "Could not open file for upload: %s", log->path.string().c_str());
+                log->upload_attempts++;
+                if (log->upload_attempts >= 3) {
+                    log->uploaded = true;
+                    log->error = true;
+                }
+                try { storage->update(*log); } catch (...) {}
+                queue_status_message(status);
+                continue;
+            }
+            std::ostringstream ss;
+            ss << file.rdbuf();
+            std::string file_content = ss.str();
+
             cpr::Multipart multi = cpr::Multipart{
-                {"file", cpr::File{log->path.string()}}, {"json", "1"}};
+                {"file", cpr::Buffer{file_content.begin(), file_content.end(), log->filename}}, 
+                {"json", "1"}};
 
             if (!userToken.disabled) {
                 params.Add({"userToken", userToken.value});
