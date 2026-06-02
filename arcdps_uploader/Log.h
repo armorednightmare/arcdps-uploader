@@ -4,7 +4,6 @@
 #include <chrono>
 #include <iomanip>
 #include <filesystem>
-#include <Revtc.h>
 #include "sqlite_orm.h"
 #include <nlohmann/json.hpp>
 #include <optional>
