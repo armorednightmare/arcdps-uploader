@@ -51,6 +51,7 @@ add_library(d3d9_uploader SHARED
     ${SOURCE}
     ${HEADERS}
 )
+set_target_properties(d3d9_uploader PROPERTIES OUTPUT_NAME "arcdps_uploader")
 
 if(MSVC)
     set_property(TARGET d3d9_uploader PROPERTY
