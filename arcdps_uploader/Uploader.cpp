@@ -259,11 +259,11 @@ void Uploader::imgui_draw_logs() {
 
         ImGui::PushStyleColor(ImGuiCol_Text, col);
         ImGui::PushID(s.human_time.c_str());
+        ImGui::SetNextItemAllowOverlap();
         ImGui::Selectable(display.c_str(), &selected[i],
                           ImGuiSelectableFlags_SpanAllColumns);
         ImGui::PopID();
         ImGui::PopStyleColor();
-        ImGui::SetItemAllowOverlap();
         ImGui::NextColumn();
         ImGui::Text(s.human_time.c_str());
         ImGui::NextColumn();
