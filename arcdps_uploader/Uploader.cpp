@@ -862,8 +862,8 @@ void Uploader::check_webhooks(int log_id) {
                 process = false;
             if (category == Revtc::BossCategory::WVW && !wh.wvw)
                 process = false;
-            if (category == Revtc::BossCategory::UNKNOWN)
-                process = false;
+            // if (category == Revtc::BossCategory::UNKNOWN)
+            //    process = false;
 
             if (wh.filter.size() > 5) {
                 std::vector<std::string> accounts;
@@ -1151,11 +1151,18 @@ void Uploader::upload_thread_loop() {
                 log->report_id = parsed["id"].get<std::string>();
                 log->permalink = parsed["permalink"].get<std::string>();
                 json encounter = parsed["encounter"];
-                log->boss_id = encounter["bossId"].get<int>();
-                log->boss_name = encounter["boss"].get<std::string>();
-                log->players_json = parsed["players"].dump();
-                log->json_available = encounter["jsonAvailable"].get<bool>();
-                log->success = encounter["success"].get<bool>();
+                log->boss_id = encounter.value("bossId", 0);
+                log->boss_name = encounter.value("boss", "");
+                if (log->boss_name.empty() || log->boss_name == "Unknown") {
+                    if (log->boss_id != 0) {
+                        log->boss_name = "Unknown " + std::to_string(log->boss_id);
+                    } else {
+                        log->boss_name = log->filename;
+                    }
+                }
+                log->players_json = parsed.value("players", json::array()).dump();
+                log->json_available = encounter.value("jsonAvailable", false);
+                log->success = encounter.value("success", false);
                 auto token = parsed["userToken"].get<std::string>();
 
                 status.msg =
