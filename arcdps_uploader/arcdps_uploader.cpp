@@ -56,7 +56,7 @@ void log_arc(char* str) {
  * returns */
 extern "C" __declspec(dllexport) void* get_init_addr(
     char* arcversion, ImGuiContext* imguictx, void* id3dptr, HANDLE arcdll,
-    void* mallocfn, void* freefn, uint32_t d3dversion) {
+    void* mallocfn, void* freefn, uint32_t imguiversion) {
     arcvers = arcversion;
 
     // Get pointers to exported functions
@@ -64,6 +64,7 @@ extern "C" __declspec(dllexport) void* get_init_addr(
     arc_log = (void*)GetProcAddress((HMODULE)arcdll, "e8");
 
     ImGui::SetCurrentContext(imguictx);
+    ImGui::SetAllocatorFunctions((void*(*)(size_t, void*))mallocfn, (void(*)(void*, void*))freefn);
     return mod_init;
 }
 
@@ -124,7 +125,7 @@ arcdps_exports* mod_init() {
     exports.sig = 0x92485179;
     exports.imguivers = IMGUI_VERSION_NUM;
     exports.out_name = "uploader";
-    exports.out_build = "1.0.4";
+    exports.out_build = "2.0.0";
     exports.wnd_nofilter = mod_wnd;
     exports.combat = mod_combat;
     exports.imgui = mod_imgui;
@@ -133,9 +134,8 @@ arcdps_exports* mod_init() {
 }
 
 /* release mod -- return ignored */
-uintptr_t mod_release() {
+void mod_release() {
     delete up;
-    return 0;
 }
 
 /* window callback -- return is assigned to umsg (return zero to not be
@@ -195,7 +195,7 @@ uintptr_t mod_combat(cbtevent* ev, ag* src, ag* dst, char* skillname,
     return uintptr_t();
 }
 
-uintptr_t mod_imgui() { return up->imgui_tick(); }
+uintptr_t mod_imgui(uint32_t not_charsel_or_loading) { return up->imgui_tick(); }
 
 void mod_options_windows(char* windowname) {
 	if (!windowname) {

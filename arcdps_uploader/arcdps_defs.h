@@ -5,7 +5,7 @@
 
 /* arcdps export table */
 typedef struct arcdps_exports {
-	uintptr_t size; /* size of exports table */
+	uint64_t size; /* size of exports table */
 	uint32_t sig; /* pick a number between 0 and uint32_t max that isn't used by other modules */
 	uint32_t imguivers; /* set this to IMGUI_VERSION_NUM. if you don't use imgui, 18000 (as of 2021-02-02) */
 	const char* out_name; /* name string */
