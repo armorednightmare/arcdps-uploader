@@ -1186,7 +1186,7 @@ void Uploader::upload_thread_loop() {
             std::string file_content = ss.str();
 
             cpr::Multipart multi = cpr::Multipart{
-                {"file", cpr::Buffer{file_content.begin(), file_content.end(), log->filename}}, 
+                {"file", cpr::Buffer{file_content.begin(), file_content.end(), log->path.filename().string()}}, 
                 {"json", "1"}};
 
             if (!userToken.disabled) {
