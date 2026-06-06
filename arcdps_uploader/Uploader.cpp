@@ -1185,9 +1185,18 @@ void Uploader::upload_thread_loop() {
             ss << file.rdbuf();
             std::string file_content = ss.str();
 
-            cpr::Multipart multi = cpr::Multipart{
-                {"file", cpr::Buffer{file_content.begin(), file_content.end(), log->path.filename().string()}}, 
-                {"json", "1"}};
+            // Construct multipart body manually to bypass cpr::Buffer missing Content-Type issues
+            std::string boundary = "----ArcDpsUploaderBoundary1234567890";
+            std::string body = "--" + boundary + "\r\n";
+            body += "Content-Disposition: form-data; name=\"json\"\r\n\r\n";
+            body += "1\r\n";
+            body += "--" + boundary + "\r\n";
+            body += "Content-Disposition: form-data; name=\"file\"; filename=\"" + log->path.filename().string() + "\"\r\n";
+            body += "Content-Type: application/octet-stream\r\n\r\n";
+            body += file_content;
+            body += "\r\n--" + boundary + "--\r\n";
+
+            cpr::Header headers = {{"Content-Type", "multipart/form-data; boundary=" + boundary}};
 
             if (!userToken.disabled) {
                 params.Add({"userToken", userToken.value});
@@ -1199,7 +1208,7 @@ void Uploader::upload_thread_loop() {
 
             log->upload_attempts++;
 
-            response = cpr::Post(url, params, multi);
+            response = cpr::Post(url, params, headers, cpr::Body{body});
 
             StatusMessage status;
             status.log_id = -1;
