@@ -48,6 +48,7 @@
 
 #ifdef _WIN32
 	#include <direct.h>
+	#include <share.h>
 
 	#define localtime_r(a, b) localtime_s(b, a) // No localtime_r with MSVC, but arguments are swapped for localtime_s
 #else
@@ -363,7 +364,11 @@ namespace loguru
 			if (!create_directories(file_abs->path)) {
 				LOG_F(ERROR, "Failed to create directories to '" LOGURU_FMT(s) "'", file_abs->path);
 			}
+#ifdef _WIN32
+			file_abs->fp = _fsopen(file_abs->path, file_abs->mode_str, _SH_DENYNO);
+#else
 			file_abs->fp = fopen(file_abs->path, file_abs->mode_str);
+#endif
 			if (!file_abs->fp) {
 				LOG_F(ERROR, "Failed to open '" LOGURU_FMT(s) "'", file_abs->path);
 			} else {
@@ -752,8 +757,8 @@ namespace loguru
 		const char* mode_str = (mode == FileMode::Truncate ? "w" : "a");
 		FILE* file;
 	#ifdef _WIN32
-		errno_t file_error = fopen_s(&file, path, mode_str);
-		if (file_error) {
+		file = _fsopen(path, mode_str, _SH_DENYNO);
+		if (!file) {
 	#else
 		file = fopen(path, mode_str);
 		if (!file) {

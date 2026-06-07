@@ -9,6 +9,9 @@
 #include "imgui/imgui.h"
 #include "imgui/imgui_stdlib.h"
 #include "loguru.hpp"
+#include "IDTableNPC.h"
+#include <fstream>
+#include <sstream>
 
 using json = nlohmann::json;
 
@@ -30,7 +33,8 @@ inline auto initStorage(const std::string& path) {
                    make_column("boss_name", &Log::boss_name),
                    make_column("players_json", &Log::players_json),
                    make_column("json_available", &Log::json_available),
-                   make_column("success", &Log::success)),
+                   make_column("success", &Log::success),
+                   make_column("upload_attempts", &Log::upload_attempts)),
         make_table(
             "webhooks",
             make_column("id", &Webhook::id, autoincrement(), primary_key()),
@@ -57,6 +61,8 @@ Uploader::Uploader(fs::path data_path, std::optional<fs::path> custom_log_path)
     : is_open(false), in_combat(false), settings(data_path / "uploader.ini") {
     // Load settings from INI
     settings.load();
+
+    IDTableNPC::load(data_path / "id_table_npc.json");
 
     // Sqlite Database
     fs::path db_path = data_path / "uploader.db";
@@ -258,26 +264,55 @@ void Uploader::imgui_draw_logs() {
         }
 
         ImGui::PushStyleColor(ImGuiCol_Text, col);
-        ImGui::PushID(s.human_time.c_str());
+        ImGui::PushID(s.filename.c_str());
+        ImGui::SetNextItemAllowOverlap();
         ImGui::Selectable(display.c_str(), &selected[i],
                           ImGuiSelectableFlags_SpanAllColumns);
         ImGui::PopID();
         ImGui::PopStyleColor();
-        ImGui::SetItemAllowOverlap();
         ImGui::NextColumn();
         ImGui::Text(s.human_time.c_str());
         ImGui::NextColumn();
         if (s.uploaded) {
             ImGui::PushID(s.filename.c_str());
-            if (ImGui::SmallButton("View")) {
-                if (!s.permalink.empty()) {
-                    int sz =
+            if (s.error) {
+                if (ImGui::SmallButton("Retry")) {
+                    s.uploaded = false;
+                    s.error = false;
+                    s.upload_attempts = 0;
+                    try {
+                        storage->update(s);
+                        std::vector<int> q = { s.id };
+                        add_pending_upload_logs(q);
+                    } catch (std::system_error& e) {
+                        LOG_F(ERROR, "Failed to reset log for retry: %s", e.what());
+                    }
+                }
+            } else {
+                if (ImGui::SmallButton("View")) {
+                    if (!s.permalink.empty()) {
+                        int sz =
+                            MultiByteToWideChar(CP_UTF8, 0, s.permalink.c_str(),
+                                                (int)s.permalink.size(), 0, 0);
+                        std::wstring wstr(sz, 0);
                         MultiByteToWideChar(CP_UTF8, 0, s.permalink.c_str(),
-                                            (int)s.permalink.size(), 0, 0);
-                    std::wstring wstr(sz, 0);
-                    MultiByteToWideChar(CP_UTF8, 0, s.permalink.c_str(),
-                                        (int)s.permalink.size(), &wstr[0], sz);
-                    ShellExecute(0, 0, wstr.c_str(), 0, 0, SW_SHOW);
+                                            (int)s.permalink.size(), &wstr[0], sz);
+                        ShellExecute(0, 0, wstr.c_str(), 0, 0, SW_SHOW);
+                    }
+                }
+            }
+            ImGui::PopID();
+        } else if (s.upload_attempts >= 3) {
+            // Should not happen, but fallback if not marked uploaded/error
+            ImGui::PushID(s.filename.c_str());
+            if (ImGui::SmallButton("Retry")) {
+                s.upload_attempts = 0;
+                try {
+                    storage->update(s);
+                    std::vector<int> q = { s.id };
+                    add_pending_upload_logs(q);
+                } catch (std::system_error& e) {
+                    LOG_F(ERROR, "Failed to reset log for retry: %s", e.what());
                 }
             }
             ImGui::PopID();
@@ -481,9 +516,9 @@ void Uploader::imgui_draw_options() {
             for (auto& wh : webhooks) {
                 ImGui::BeginChild(
                     wh.name.c_str(),
-                    ImVec2(ImGui::GetContentRegionAvailWidth(), 148), true);
+                    ImVec2(ImGui::GetContentRegionAvail().x, 148), true);
 
-                ImGui::PushItemWidth(ImGui::GetContentRegionAvailWidth() -
+                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x -
                                      ImGui::CalcTextSize("Filter").x - 1);
                 ImGui::InputText("Name", wh.name_buf, 64);
                 ImGui::PopItemWidth();
@@ -494,7 +529,7 @@ void Uploader::imgui_draw_options() {
                     ImGui::EndTooltip();
                 }
 
-                ImGui::PushItemWidth(ImGui::GetContentRegionAvailWidth() -
+                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x -
                                      ImGui::CalcTextSize("Filter").x - 1);
                 ImGui::InputText("URL", wh.url_buf, 192);
                 ImGui::PopItemWidth();
@@ -543,7 +578,7 @@ void Uploader::imgui_draw_options() {
                     ImGui::EndTooltip();
                 }
 
-                ImGui::PushItemWidth(ImGui::GetContentRegionAvailWidth() -
+                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x -
                                      ImGui::CalcTextSize("Filter").x - 1);
                 ImGui::InputText("Filter", wh.filter_buf, 256);
                 ImGui::PopItemWidth();
@@ -558,7 +593,7 @@ void Uploader::imgui_draw_options() {
                     ImGui::EndTooltip();
                 }
 
-                ImGui::PushItemWidth(ImGui::GetContentRegionAvailWidth() *
+                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x *
                                      0.25f);
                 ImGui::InputInt("Min", &wh.filter_min, 1, 2);
                 ImGui::PopItemWidth();
@@ -667,7 +702,7 @@ void Uploader::imgui_draw_options() {
             }
 
             if (settings.gw2bot_enabled) {
-                ImGui::PushItemWidth(ImGui::GetContentRegionAvailWidth() -
+                ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x -
                                      ImGui::CalcTextSize("EVTC Api Key").x - 5);
                 ImGui::InputText("EVTC Api Key", &settings.gw2bot_key);
                 ImGui::PopItemWidth();
@@ -702,7 +737,7 @@ void Uploader::imgui_draw_options() {
                 ImGui::EndTooltip();
             }
 
-            ImGui::PushItemWidth(ImGui::GetContentRegionAvailWidth() -
+            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x -
                 ImGui::CalcTextSize("Formatted log output").x - 5);
             ImGui::InputText("Formatted log string", &settings.msg_format);
             ImGui::PopItemWidth();
@@ -715,7 +750,7 @@ void Uploader::imgui_draw_options() {
                 ImGui::EndTooltip();
             }
 
-            ImGui::PushItemWidth(ImGui::GetContentRegionAvailWidth() * 0.25f);
+            ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x * 0.25f);
             ImGui::InputInt("# of minutes back for recent clears", &settings.recent_minutes);
             ImGui::PopItemWidth();
 
@@ -726,118 +761,9 @@ void Uploader::imgui_draw_options() {
 
 void Uploader::imgui_draw_options_aleeva() {
     if (ImGui::TreeNode("Aleeva")) {
-        ImGui::Checkbox("Aleeva Integration Enabled", &settings.aleeva.enabled);
-        if (ImGui::IsItemHovered()) {
-            ImGui::BeginTooltip();
-            ImGui::Text("Post logs for Aleeva to manage");
-            ImGui::EndTooltip();
-        }
-
-        if (settings.aleeva.enabled) {
-            if (!settings.aleeva.authorised) {
-                const char* access_title = "Access Code";
-                ImGui::PushItemWidth(ImGui::GetContentRegionAvailWidth() -
-                                     ImGui::CalcTextSize(access_title).x - 5);
-                ImGui::InputText(access_title, &settings.aleeva.access_code);
-                ImGui::PopItemWidth();
-                if (ImGui::IsItemHovered()) {
-                    ImGui::BeginTooltip();
-                    ImGui::Text(
-                        "Use Aleeva's /profile command to generate an "
-                        "access code");
-                    ImGui::EndTooltip();
-                }
-
-                if (ImGui::Button("Login")) {
-                    auto future = std::async(
-                        std::launch::async, [&]() { 
-							StatusMessage sm;
-							sm.msg = "Aleeva login failed. Please check your access code and try to login again.";
-                            if (Aleeva::login(settings)) {
-                                sm.msg = "Aleeva login successful.";
-                            }
-                            status_messages.push_back(sm);
-                        });
-                }
-            } else {
-                ImGui::SameLine();
-                if (ImGui::Button("Logout")) {
-                    Aleeva::deauthorize(settings);
-                }
-
-                ImGui::Checkbox("Post To Discord", &settings.aleeva.should_post);
-                if (ImGui::IsItemHovered()) {
-                    ImGui::BeginTooltip();
-                    ImGui::Text("Have Aleeva post logs to the selected Discord channel.");
-                    ImGui::EndTooltip();
-                }
-                if (settings.aleeva.should_post) {
-                    ImGui::Indent();
-
-                    const char* server_title = "";
-                    for (const auto& server : settings.aleeva.server_ids) {
-                        if (server.id == settings.aleeva.selected_server_id) {
-                            server_title = server.name.c_str();
-                            break;
-                        }
-                    }
-                    if (ImGui::BeginCombo("Server", server_title, ImGuiComboFlags_None)) {
-                        for (auto& server : settings.aleeva.server_ids) {
-                            bool is_selected = (server.id == settings.aleeva.selected_server_id);
-                            if (ImGui::Selectable(server.name.c_str(), is_selected)) {
-                                settings.aleeva.selected_server_id = server.id;
-                            }
-                            
-                            if (is_selected) {
-                                ImGui::SetItemDefaultFocus();
-                            }
-                        }
-
-                        ImGui::EndCombo();
-                    }
-
-                    const char* channel_title = "";
-                    if (settings.aleeva.channel_ids.count(settings.aleeva.selected_server_id)) {
-                        const std::vector<Aleeva::DiscordId>& channel_ids = 
-                            settings.aleeva.channel_ids[settings.aleeva.selected_server_id];
-                        for (const auto& channel : channel_ids) {
-                            if (channel.id == settings.aleeva.selected_channel_id) {
-                                channel_title = channel.name.c_str();
-                                break;
-                            }
-                        }
-                    }
-                    if (ImGui::BeginCombo("Channel", channel_title, ImGuiComboFlags_None)) {
-                        const std::vector<Aleeva::DiscordId>& channel_ids = 
-                            settings.aleeva.channel_ids[settings.aleeva.selected_server_id];
-
-                        for (auto& channel : channel_ids) {
-                            bool is_selected = (channel.id == settings.aleeva.selected_server_id);
-                            if (ImGui::Selectable(channel.name.c_str(), is_selected)) {
-                                settings.aleeva.selected_channel_id = channel.id;
-                            }
-                            
-                            if (is_selected) {
-                                ImGui::SetItemDefaultFocus();
-                            }
-                        }
-
-                        ImGui::EndCombo();
-                    }
-
-                    ImGui::Unindent();
-                }
-
-                ImGui::Checkbox("Clears only", &settings.gw2bot_success_only);
-                if (ImGui::IsItemHovered()) {
-                    ImGui::BeginTooltip();
-                    ImGui::Text("Only post clears/successful logs to Aleeva.");
-                    ImGui::EndTooltip();
-                }
-            }
-
-        }
-
+        ImGui::TextDisabled("Aleeva integration has been disabled.");
+        ImGui::TextDisabled("The Aleeva service is no longer available.");
+        settings.aleeva.enabled = false;
         ImGui::TreePop();
     }
 }
@@ -956,23 +882,22 @@ void Uploader::check_webhooks(int log_id) {
             }
         }
 
-        Revtc::BossCategory category =
-            Revtc::Parser::encounterCategory((Revtc::BossID)log->boss_id);
+        std::string category = IDTableNPC::getCategory(log->boss_id);
         for (const auto& wh : webhooks) {
             bool process = true;
             if (!log->success && wh.success) process = false;
-            if (category == Revtc::BossCategory::RAIDS && !wh.raids)
+            if (category == "RAIDS" && !wh.raids)
                 process = false;
-            if (category == Revtc::BossCategory::FRACTALS && !wh.fractals)
+            if (category == "FRACTALS" && !wh.fractals)
                 process = false;
-            if (category == Revtc::BossCategory::STRIKES && !wh.strikes)
+            if (category == "STRIKES" && !wh.strikes)
                 process = false;
-            if (category == Revtc::BossCategory::GOLEMS && !wh.golems)
+            if (category == "GOLEMS" && !wh.golems)
                 process = false;
-            if (category == Revtc::BossCategory::WVW && !wh.wvw)
+            if (category == "WVW" && !wh.wvw)
                 process = false;
-            if (category == Revtc::BossCategory::UNKNOWN)
-                process = false;
+            // if (category == Revtc::BossCategory::UNKNOWN)
+            //    process = false;
 
             if (wh.filter.size() > 5) {
                 std::vector<std::string> accounts;
@@ -1072,21 +997,8 @@ void Uploader::check_gw2bot(int log_id) {
 }
 
 void Uploader::check_aleeva(int log_id) {
-    if (!settings.aleeva.enabled) return;
-
-    auto log = storage->get_pointer<Log>(log_id);
-    if (log) {
-        bool process = true;
-        if (!log->success && settings.gw2bot_success_only) process = false;
-
-        if (process) {
-            LOG_F(INFO, "Posting to Aleeva: %s", log->permalink.c_str());
-            auto aleeva_future = std::async(
-                std::launch::async,
-                Aleeva::post_log,
-                settings.aleeva, log->permalink);
-        }
-    }
+    // Aleeva integration is disabled
+    return;
 }
 
 void Uploader::start_async_refresh_log_list() {
@@ -1149,6 +1061,7 @@ void Uploader::start_async_refresh_log_list() {
                         log.boss_id = 0;
                         log.json_available = false;
                         log.success = false;
+                        log.upload_attempts = 0;
 
                         try {
                             log.id = storage->insert(log);
@@ -1167,7 +1080,7 @@ void Uploader::start_async_refresh_log_list() {
 
             std::vector<int> queue;
             for (auto& log : file_list) {
-                if (!log.uploaded) queue.push_back(log.id);
+                if (!log.uploaded && log.upload_attempts < 3) queue.push_back(log.id);
             }
             add_pending_upload_logs(queue);
 
@@ -1203,18 +1116,10 @@ void Uploader::start_upload_thread() {
     // Create a thread that spins, waiting for uploads to process
     upload_thread_run = true;
     upload_thread = std::thread(&Uploader::upload_thread_loop, this);
-    // Aleeva Authorise
-    if (settings.aleeva.enabled) {
-        auto future =
-            std::async(std::launch::async, [&]() {
-				StatusMessage sm;
-                sm.msg = "Aleeva login failed. Please check your access code and try to login again.";
-                if (Aleeva::login(settings)) {
-                    sm.msg = "Aleeva login successful.";
-				}
-				status_messages.push_back(sm);
-			});
-    }
+    // Aleeva integration is disabled
+    // if (settings.aleeva.enabled) {
+    //     ...
+    // }
 }
 
 void Uploader::add_pending_upload_logs(std::vector<int>& queue) {
@@ -1259,8 +1164,39 @@ void Uploader::upload_thread_loop() {
             cpr::Response response;
             cpr::Url url = cpr::Url{"https://dps.report/uploadContent"};
             cpr::Parameters params = cpr::Parameters{};
-            cpr::Multipart multi = cpr::Multipart{
-                {"file", cpr::File{log->path.string()}}, {"json", "1"}};
+            
+            // Read file into memory to avoid CPR/Curl path encoding issues on Windows
+            std::ifstream file(log->path, std::ios::binary);
+            if (!file.is_open()) {
+                StatusMessage status;
+                status.log_id = log_id;
+                status.msg = "Upload failed. Could not open file locally.";
+                LOG_F(ERROR, "Could not open file for upload: %s", log->path.string().c_str());
+                log->upload_attempts++;
+                if (log->upload_attempts >= 3) {
+                    log->uploaded = true;
+                    log->error = true;
+                }
+                try { storage->update(*log); } catch (...) {}
+                queue_status_message(status);
+                continue;
+            }
+            std::ostringstream ss;
+            ss << file.rdbuf();
+            std::string file_content = ss.str();
+
+            // Construct multipart body manually to bypass cpr::Buffer missing Content-Type issues
+            std::string boundary = "----ArcDpsUploaderBoundary1234567890";
+            std::string body = "--" + boundary + "\r\n";
+            body += "Content-Disposition: form-data; name=\"json\"\r\n\r\n";
+            body += "1\r\n";
+            body += "--" + boundary + "\r\n";
+            body += "Content-Disposition: form-data; name=\"file\"; filename=\"" + log->path.filename().string() + "\"\r\n";
+            body += "Content-Type: application/octet-stream\r\n\r\n";
+            body += file_content;
+            body += "\r\n--" + boundary + "--\r\n";
+
+            cpr::Header headers = {{"Content-Type", "multipart/form-data; boundary=" + boundary}};
 
             if (!userToken.disabled) {
                 params.Add({"userToken", userToken.value});
@@ -1270,7 +1206,9 @@ void Uploader::upload_thread_loop() {
                 params.Add({"detailedwvw", "true"});
             }
 
-            response = cpr::Post(url, params, multi);
+            log->upload_attempts++;
+
+            response = cpr::Post(url, params, headers, cpr::Body{body});
 
             StatusMessage status;
             status.log_id = -1;
@@ -1278,14 +1216,23 @@ void Uploader::upload_thread_loop() {
                 json parsed = json::parse(response.text);
 
                 log->uploaded = true;
+                log->error = false;
                 log->report_id = parsed["id"].get<std::string>();
                 log->permalink = parsed["permalink"].get<std::string>();
                 json encounter = parsed["encounter"];
-                log->boss_id = encounter["bossId"].get<int>();
-                log->boss_name = encounter["boss"].get<std::string>();
-                log->players_json = parsed["players"].dump();
-                log->json_available = encounter["jsonAvailable"].get<bool>();
-                log->success = encounter["success"].get<bool>();
+                log->boss_id = encounter.value("bossId", 0);
+                log->boss_name = encounter.value("boss", "");
+                IDTableNPC::addOrUpdate(log->boss_id, log->boss_name);
+                if (log->boss_name.empty() || log->boss_name == "Unknown") {
+                    if (log->boss_id != 0) {
+                        log->boss_name = "Unknown " + std::to_string(log->boss_id);
+                    } else {
+                        log->boss_name = log->filename;
+                    }
+                }
+                log->players_json = parsed.value("players", json::array()).dump();
+                log->json_available = encounter.value("jsonAvailable", false);
+                log->success = encounter.value("success", false);
                 auto token = parsed["userToken"].get<std::string>();
 
                 status.msg =
@@ -1312,15 +1259,25 @@ void Uploader::upload_thread_loop() {
                 status.msg =
                     "Upload failed. Invalid Username/Password. Please login "
                     "again.";
+                if (log->upload_attempts >= 3) {
+                    log->uploaded = true;
+                    log->error = true;
+                }
             } else if (response.status_code == 400) {
                 status.msg =
                     "Upload failed. Invalid File/File Error or Connection "
                     "Error.";
+                LOG_F(ERROR, "Upload failed with HTTP 400. File: %s, Response: %s, CPR Error: %s", 
+                      log->filename.c_str(), response.text.c_str(), response.error.message.c_str());
+                if (log->upload_attempts >= 3) {
+                    log->uploaded = true;
+                    log->error = true;
+                }
             } else {
                 status.msg = "Unknown response.\n" + response.text;
-                LOG_F(INFO, "Upload failed: %s - %d, %s, %s", log->filename,
-                      response.status_code, response.error.message,
-                      response.text);
+                LOG_F(INFO, "Upload failed: %s - %d, %s, %s", log->filename.c_str(),
+                      response.status_code, response.error.message.c_str(),
+                      response.text.c_str());
                 log->uploaded = true;
                 log->error = true;
             }

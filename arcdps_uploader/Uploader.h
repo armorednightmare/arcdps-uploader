@@ -6,7 +6,6 @@
 #include <filesystem>
 #include <future>
 #include <deque>
-#include "Revtc.h"
 #include "sqlite_orm.h"
 #include "Log.h"
 #include "Settings.h"

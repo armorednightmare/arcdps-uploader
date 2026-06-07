@@ -27,7 +27,7 @@ set(SOURCE
     arcdps_uploader/imgui/imgui_stdlib.cpp
     arcdps_uploader/loguru.cpp
     arcdps_uploader/sqlite3.c
-    revtc/Revtc.cpp
+    arcdps_uploader/IDTableNPC.cpp
 )
 
 set(HEADERS
@@ -45,15 +45,20 @@ set(HEADERS
     arcdps_uploader/imgui/imstb_textedit.h
     arcdps_uploader/imgui/imstb_truetype.h
     arcdps_uploader/imgui/imgui_stdlib.h
+    arcdps_uploader/IDTableNPC.h
+    arcdps_uploader/DefaultIDTableNPC.h
 )
 
 add_library(d3d9_uploader SHARED
     ${SOURCE}
     ${HEADERS}
 )
+set_target_properties(d3d9_uploader PROPERTIES OUTPUT_NAME "arcdps_uploader")
 
-set_property(TARGET d3d9_uploader PROPERTY
-  MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+if(MSVC)
+    set_property(TARGET d3d9_uploader PROPERTY
+      MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 include_directories(
     arcdps_uploader/includes
@@ -65,7 +70,9 @@ target_compile_definitions(d3d9_uploader PRIVATE
     _CRT_SECURE_NO_WARNINGS
     CURL_STATICLIB
 )
-target_compile_options(d3d9_uploader PUBLIC "/Zc:__cplusplus")
+if(MSVC)
+    target_compile_options(d3d9_uploader PUBLIC "/Zc:__cplusplus")
+endif()
 
 add_executable(uploader_standalone
     arcdps_uploader/main.cpp
@@ -77,8 +84,10 @@ add_executable(uploader_standalone
     ${HEADERS}
 )
 
-set_property(TARGET uploader_standalone PROPERTY
-  MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+if(MSVC)
+    set_property(TARGET uploader_standalone PROPERTY
+      MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 target_compile_definitions(uploader_standalone PRIVATE
     UNICODE
@@ -87,7 +96,9 @@ target_compile_definitions(uploader_standalone PRIVATE
     CURL_STATICLIB
     STANDALONE
 )
-target_compile_options(uploader_standalone PUBLIC "/Zc:__cplusplus")
+if(MSVC)
+    target_compile_options(uploader_standalone PUBLIC "/Zc:__cplusplus")
+endif()
 set_property(TARGET uploader_standalone PROPERTY VS_DEBUGGER_WORKING_DIRECTORY ${GW2_DIR})
 
 target_link_libraries(d3d9_uploader PUBLIC
@@ -99,6 +110,7 @@ target_link_libraries(uploader_standalone PUBLIC
     CURL::libcurl
     cpr::cpr
     D3d9
+    dwmapi
 )
 
 add_custom_command(TARGET d3d9_uploader POST_BUILD

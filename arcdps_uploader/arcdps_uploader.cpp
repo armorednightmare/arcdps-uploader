@@ -56,7 +56,7 @@ void log_arc(char* str) {
  * returns */
 extern "C" __declspec(dllexport) void* get_init_addr(
     char* arcversion, ImGuiContext* imguictx, void* id3dptr, HANDLE arcdll,
-    void* mallocfn, void* freefn, uint32_t d3dversion) {
+    void* mallocfn, void* freefn, uint32_t imguiversion) {
     arcvers = arcversion;
 
     // Get pointers to exported functions
@@ -64,6 +64,7 @@ extern "C" __declspec(dllexport) void* get_init_addr(
     arc_log = (void*)GetProcAddress((HMODULE)arcdll, "e8");
 
     ImGui::SetCurrentContext(imguictx);
+    ImGui::SetAllocatorFunctions((void*(*)(size_t, void*))mallocfn, (void(*)(void*, void*))freefn);
     return mod_init;
 }
 
@@ -109,10 +110,54 @@ arcdps_exports* mod_init() {
         fs::create_directory(uploader_data_path);
     }
 
-    // Loguru Log
+    // Loguru Log rotation (up to 3 log files stored total: uploader.log, .1, .2)
     fs::path uploader_log_path = uploader_data_path / "uploader.log";
-    loguru::add_file(uploader_log_path.string().c_str(), loguru::Truncate,
-                     loguru::Verbosity_MAX);
+    try {
+        for (int i = 1; i >= 1; --i) {
+            fs::path src = uploader_data_path / ("uploader.log." + std::to_string(i));
+            fs::path dst = uploader_data_path / ("uploader.log." + std::to_string(i + 1));
+            if (fs::exists(src)) {
+                fs::rename(src, dst);
+            }
+        }
+        if (fs::exists(uploader_log_path)) {
+            fs::rename(uploader_log_path, uploader_data_path / "uploader.log.1");
+        }
+    } catch (const std::exception& e) {
+        // Ignore rotation errors (e.g. file lock)
+    }
+
+    static std::string log_path_str = uploader_log_path.string();
+    {
+#ifdef _WIN32
+        FILE* init_file = _fsopen(log_path_str.c_str(), "a", _SH_DENYNO);
+#else
+        FILE* init_file = fopen(log_path_str.c_str(), "a");
+#endif
+        if (init_file) {
+            fprintf(init_file, "\n\n\n\n\n--- Uploader Started ---\n");
+            fclose(init_file);
+        }
+    }
+
+    loguru::add_callback(
+        "uploader_file_log",
+        [](void* user_data, const loguru::Message& message) {
+            const char* path = static_cast<const char*>(user_data);
+#ifdef _WIN32
+            FILE* file = _fsopen(path, "a", _SH_DENYNO);
+#else
+            FILE* file = fopen(path, "a");
+#endif
+            if (file) {
+                fprintf(file, "%s%s%s%s\n",
+                        message.preamble, message.indentation, message.prefix, message.message);
+                fclose(file);
+            }
+        },
+        const_cast<char*>(log_path_str.c_str()),
+        loguru::Verbosity_MAX
+    );
 
     // Uploader
     up = new Uploader(uploader_data_path, log_path);
@@ -124,7 +169,7 @@ arcdps_exports* mod_init() {
     exports.sig = 0x92485179;
     exports.imguivers = IMGUI_VERSION_NUM;
     exports.out_name = "uploader";
-    exports.out_build = "1.0.4";
+    exports.out_build = "2.0.0";
     exports.wnd_nofilter = mod_wnd;
     exports.combat = mod_combat;
     exports.imgui = mod_imgui;
@@ -133,9 +178,8 @@ arcdps_exports* mod_init() {
 }
 
 /* release mod -- return ignored */
-uintptr_t mod_release() {
+void mod_release() {
     delete up;
-    return 0;
 }
 
 /* window callback -- return is assigned to umsg (return zero to not be
@@ -195,7 +239,7 @@ uintptr_t mod_combat(cbtevent* ev, ag* src, ag* dst, char* skillname,
     return uintptr_t();
 }
 
-uintptr_t mod_imgui() { return up->imgui_tick(); }
+uintptr_t mod_imgui(uint32_t not_charsel_or_loading) { return up->imgui_tick(); }
 
 void mod_options_windows(char* windowname) {
 	if (!windowname) {
