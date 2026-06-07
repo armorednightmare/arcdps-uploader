@@ -110,10 +110,10 @@ arcdps_exports* mod_init() {
         fs::create_directory(uploader_data_path);
     }
 
-    // Loguru Log rotation (up to 10 backup logs)
+    // Loguru Log rotation (up to 3 log files stored total: uploader.log, .1, .2)
     fs::path uploader_log_path = uploader_data_path / "uploader.log";
     try {
-        for (int i = 9; i >= 1; --i) {
+        for (int i = 1; i >= 1; --i) {
             fs::path src = uploader_data_path / ("uploader.log." + std::to_string(i));
             fs::path dst = uploader_data_path / ("uploader.log." + std::to_string(i + 1));
             if (fs::exists(src)) {
