@@ -127,8 +127,37 @@ arcdps_exports* mod_init() {
         // Ignore rotation errors (e.g. file lock)
     }
 
-    loguru::add_file(uploader_log_path.string().c_str(), loguru::Append,
-                     loguru::Verbosity_MAX);
+    static std::string log_path_str = uploader_log_path.string();
+    {
+#ifdef _WIN32
+        FILE* init_file = _fsopen(log_path_str.c_str(), "a", _SH_DENYNO);
+#else
+        FILE* init_file = fopen(log_path_str.c_str(), "a");
+#endif
+        if (init_file) {
+            fprintf(init_file, "\n\n\n\n\n--- Uploader Started ---\n");
+            fclose(init_file);
+        }
+    }
+
+    loguru::add_callback(
+        "uploader_file_log",
+        [](void* user_data, const loguru::Message& message) {
+            const char* path = static_cast<const char*>(user_data);
+#ifdef _WIN32
+            FILE* file = _fsopen(path, "a", _SH_DENYNO);
+#else
+            FILE* file = fopen(path, "a");
+#endif
+            if (file) {
+                fprintf(file, "%s%s%s%s\n",
+                        message.preamble, message.indentation, message.prefix, message.message);
+                fclose(file);
+            }
+        },
+        const_cast<char*>(log_path_str.c_str()),
+        loguru::Verbosity_MAX
+    );
 
     // Uploader
     up = new Uploader(uploader_data_path, log_path);
