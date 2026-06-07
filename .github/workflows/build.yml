@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag to release (leave empty to only build, e.g. v0.9.7)'
+        description: 'Version tag to release (leave empty to only build, e.g. v2.1.0)'
         required: false
         type: string
 
