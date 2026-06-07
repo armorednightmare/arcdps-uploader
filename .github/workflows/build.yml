@@ -2,10 +2,18 @@ name: Build arcdps-uploader
 
 on:
   push:
-    # Ohne branches-Filter triggert der Workflow bei jedem Push
+    branches: [ "master", "main" ]
   pull_request:
     branches: [ "master", "main" ]
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag to release (leave empty to only build, e.g. v0.9.7)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -35,3 +43,13 @@ jobs:
       with:
         name: arcdps_uploader
         path: ${{github.workspace}}/build/Release/arcdps_uploader.dll
+
+    - name: Create Release
+      if: github.event_name == 'workflow_dispatch' && github.event.inputs.version != ''
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.event.inputs.version }}
+        name: ${{ github.event.inputs.version }}
+        files: ${{github.workspace}}/build/Release/arcdps_uploader.dll
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
